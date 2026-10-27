@@ -96,11 +96,11 @@ jobs:
 
       - name: Build Release APK
         if: ${{ github.event_name == 'push' || inputs.build_apk }}
-        run: ./gradlew assembleRelease --no-daemon --no-configuration-cache --stacktrace
+        run: ./gradlew clean assembleRelease --no-daemon --stacktrace
 
       - name: Build Android App Bundle (.aab)
         if: ${{ github.event_name == 'push' || inputs.build_bundle }}
-        run: ./gradlew bundleRelease --no-daemon --no-configuration-cache --stacktrace
+        run: ./gradlew bundleRelease --no-daemon --stacktrace
 
       - name: Upload Release APK
         if: ${{ github.event_name == 'push' || inputs.build_apk }}
