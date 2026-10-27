@@ -1,0 +1,95 @@
+name: Android CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & Test Android App
+    runs-on: ubuntu-latest
+
+    env:
+      STORE_PASSWORD: "android"
+      KEY_PASSWORD: "android"
+      GRADLE_OPTS: "-Xmx3584m -XX:MaxMetaspaceSize=1024m -XX:+UseG1GC -Dfile.encoding=UTF-8 -Dorg.gradle.workers.max=2 -Dorg.gradle.jvmargs=\"-Xmx3584m -XX:MaxMetaspaceSize=1024m -XX:+UseG1GC -Dfile.encoding=UTF-8\""
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Grant Execute Permission to Gradlew
+        run: chmod +x gradlew
+
+      - name: Provision Required Keystores & Environment
+        run: |
+          # 1. Setup .env from .env.example if missing
+          if [ ! -f .env ] && [ -f .env.example ]; then
+            cp .env.example .env
+          elif [ ! -f .env ]; then
+            touch .env
+          fi
+
+          # 2. Provision debug.keystore required for debugConfig
+          if [ ! -f debug.keystore ]; then
+            if [ -f debug.keystore.base64 ]; then
+              base64 -d debug.keystore.base64 > debug.keystore 2>/dev/null || true
+            fi
+            if [ ! -f debug.keystore ] || [ ! -s debug.keystore ]; then
+              echo "Generating debug.keystore..."
+              keytool -genkeypair -v -keystore debug.keystore \
+                -storepass android -alias androiddebugkey -keypass android \
+                -keyalg RSA -keysize 2048 -validity 10000 \
+                -dname "CN=Android Debug,O=Android,C=US"
+            fi
+          fi
+
+          # 3. Provision my-upload-key.jks required for release signing configuration
+          if [ ! -f my-upload-key.jks ]; then
+            echo "Generating fallback my-upload-key.jks..."
+            keytool -genkeypair -v -keystore my-upload-key.jks \
+              -alias upload -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android \
+              -dname "CN=Android Upload,O=AIStudio,C=US"
+          fi
+          echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/my-upload-key.jks" >> $GITHUB_ENV
+
+          # 4. Provision fallback google-services.json if missing
+          if [ ! -f app/google-services.json ]; then
+            echo '{"project_info":{"project_number":"862067017915","project_id":"abdelha","storage_bucket":"abdelha.firebasestorage.app"},"client":[{"client_info":{"mobilesdk_app_id":"1:862067017915:android:9b9abdfc9873d2c824819e","android_client_info":{"package_name":"com.aistudio.diagnostics.qxvt"}},"oauth_client":[{"client_id":"862067017915-hk577ppen0116ubjjue8q94rv3vaf0j7.apps.googleusercontent.com","client_type":1,"android_info":{"package_name":"com.aistudio.diagnostics.qxvt","certificate_hash":"e25aa96c7005e94e9aa0b4279d34c391a48970e0"}},{"client_id":"862067017915-k252kl4hk0m9dkl38trdto2mn98o4lil.apps.googleusercontent.com","client_type":3}],"api_key":[{"current_key":"AIzaSyCeT0O_NWxGePErRqWT_ErY5plgJekMhdo"}],"services":{}}],"configuration_version":"1"}' > app/google-services.json
+          fi
+
+      - name: Run Unit Tests
+        run: ./gradlew testDebugUnitTest --continue --no-daemon --no-configuration-cache --stacktrace
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: app/build/reports/tests/
+          retention-days: 7
+
+      - name: Assemble Debug APK
+        run: ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: phone-diagnostics-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14

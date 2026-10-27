@@ -1,0 +1,74 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidDiagnosticReport(data) {
+      return data.userId is string && data.userId.size() > 0 && data.userId.size() <= 128 &&
+             data.healthScore is int && data.healthScore >= 0 && data.healthScore <= 100 &&
+             data.rating is string && data.rating.size() > 0 && data.rating.size() <= 64 &&
+             data.deviceModel is string && data.deviceModel.size() > 0 && data.deviceModel.size() <= 128 &&
+             data.androidVersion is string && data.androidVersion.size() > 0 && data.androidVersion.size() <= 64 &&
+             data.batteryHealth is string && data.batteryHealth.size() > 0 && data.batteryHealth.size() <= 64 &&
+             data.batteryLevel is int && data.batteryLevel >= 0 && data.batteryLevel <= 100 &&
+             (data.batteryTempC is int || data.batteryTempC is float) &&
+             data.passedCount is int && data.passedCount >= 0 &&
+             data.failedCount is int && data.failedCount >= 0 &&
+             data.warningCount is int && data.warningCount >= 0 &&
+             data.totalCount is int && data.totalCount >= 0 &&
+             (!('testSummaryJson' in data) || (data.testSummaryJson is string && data.testSummaryJson.size() <= 50000)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000)) &&
+             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    match /users/{userId}/reports/{reportId} {
+      allow get, list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(reportId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'userId', 'healthScore', 'rating', 'deviceModel',
+                         'androidVersion', 'batteryHealth', 'batteryLevel',
+                         'batteryTempC', 'passedCount', 'failedCount',
+                         'warningCount', 'totalCount', 'createdAt'
+                       ]) &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       isValidDiagnosticReport(incoming());
+
+      allow update: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(reportId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidDiagnosticReport(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'updatedAt']);
+
+      allow delete: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(reportId);
+    }
+  }
+}

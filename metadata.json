@@ -1,0 +1,8 @@
+{
+  "name": "Remix PhoneHealth Diagnostics",
+  "description": "Test screen, battery, and speaker hardware performance and generate comprehensive health status reports for your device.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

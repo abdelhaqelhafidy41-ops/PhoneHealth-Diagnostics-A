@@ -1,0 +1,98 @@
+{
+  "entities": {
+    "DiagnosticReport": {
+      "title": "DiagnosticReport",
+      "description": "Hardware diagnostic report summary and component results",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth user ID of the report owner"
+        },
+        "healthScore": {
+          "type": "integer",
+          "description": "Calculated health score between 0 and 100"
+        },
+        "rating": {
+          "type": "string",
+          "description": "Health status rating e.g. Optimal Condition, Good Condition"
+        },
+        "deviceModel": {
+          "type": "string",
+          "description": "Hardware manufacturer and model"
+        },
+        "androidVersion": {
+          "type": "string",
+          "description": "Android OS release and API level"
+        },
+        "batteryHealth": {
+          "type": "string",
+          "description": "Battery chemical health condition"
+        },
+        "batteryLevel": {
+          "type": "integer",
+          "description": "Battery charge percentage"
+        },
+        "batteryTempC": {
+          "type": "number",
+          "description": "Battery temperature in Celsius"
+        },
+        "passedCount": {
+          "type": "integer",
+          "description": "Number of passed component tests"
+        },
+        "failedCount": {
+          "type": "integer",
+          "description": "Number of failed component tests"
+        },
+        "warningCount": {
+          "type": "integer",
+          "description": "Number of warning component tests"
+        },
+        "totalCount": {
+          "type": "integer",
+          "description": "Total number of evaluated tests"
+        },
+        "testSummaryJson": {
+          "type": "string",
+          "description": "Serialized JSON array of component test details"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional user notes for this inspection run"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp via serverTimestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp via serverTimestamp"
+        }
+      },
+      "required": [
+        "userId",
+        "healthScore",
+        "rating",
+        "deviceModel",
+        "androidVersion",
+        "batteryHealth",
+        "batteryLevel",
+        "batteryTempC",
+        "passedCount",
+        "failedCount",
+        "warningCount",
+        "totalCount",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/reports/{reportId}": {
+      "schema": "DiagnosticReport",
+      "description": "Diagnostic reports stored under the authenticated user's private collection"
+    }
+  }
+}
