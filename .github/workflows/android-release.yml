@@ -1,178 +1,111 @@
-
-name: Android Release Build
+name: Android Test APK
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
+      - master
+
   workflow_dispatch:
-    inputs:
-      build_bundle:
-        description: "Build Android App Bundle (.aab)"
-        required: true
-        type: boolean
-        default: true
-      build_apk:
-        description: "Build Release APK (.apk)"
-        required: true
-        type: boolean
-        default: true
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: android-release-${{ github.ref }}
-  cancel-in-progress: false
+  group: android-test-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  release:
-    name: Build Android Release
+  build:
+    name: Build and Diagnose Android APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set Up Java 17
+      - name: Set Up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Verify Project Files
+      - name: Set Up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Verify Project
         shell: bash
         run: |
-          set -e
-          test -f gradlew || {
-            echo "::error::gradlew not found in repository root."
+          set -euo pipefail
+
+          if [ ! -f gradlew ]; then
+            echo "::error::gradlew was not found in the repository root."
             exit 1
-          }
-          test -f settings.gradle -o -f settings.gradle.kts || {
-            echo "::error::Gradle settings file not found."
+          fi
+
+          if [ ! -f settings.gradle ] && \
+             [ ! -f settings.gradle.kts ]; then
+            echo "::error::Gradle settings file is missing."
             exit 1
-          }
-          test -f app/build.gradle -o -f app/build.gradle.kts || {
-            echo "::error::app/build.gradle or app/build.gradle.kts not found."
+          fi
+
+          if [ ! -f app/build.gradle ] && \
+             [ ! -f app/build.gradle.kts ]; then
+            echo "::error::Android app Gradle file is missing."
             exit 1
-          }
+          fi
+
           chmod +x gradlew
+
+          echo "Java version:"
           java -version
+
+          echo "Gradle version:"
           ./gradlew --version
 
-      
-      - name: Configure Test Signing
+      - name: Build Debug APK
+        id: build_apk
         shell: bash
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          STORE_PASS_SECRET: ${{ secrets.STORE_PASSWORD }}
-          KEY_PASS_SECRET: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-
-          KEYSTORE_FILE="$RUNNER_TEMP/test-release-key.jks"
-          STORE_PASS="${STORE_PASS_SECRET:-android}"
-          KEY_PASS="${KEY_PASS_SECRET:-android}"
-
-          if [ -n "${KEYSTORE_BASE64:-}" ]; then
-            printf '%s' "$KEYSTORE_BASE64" \
-              | base64 --decode > "$KEYSTORE_FILE"
-          else
-            keytool -genkeypair \
-              -keystore "$KEYSTORE_FILE" \
-              -storepass "$STORE_PASS" \
-              -alias upload \
-              -keypass "$KEY_PASS" \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Test Build,O=Android,C=US"
-          fi
-
-          keytool -list \
-            -keystore "$KEYSTORE_FILE" \
-            -storepass "$STORE_PASS"
-
-          {
-            echo "KEYSTORE_PATH=$KEYSTORE_FILE"
-            echo "STORE_PASSWORD=$STORE_PASS"
-            echo "KEY_PASSWORD=$KEY_PASS"
-          } >> "$GITHUB_ENV"
-
-          echo "Temporary test signing configured."
-          
-      - name: Configure Google Services
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if grep -R -q \
-            'com.google.gms.google-services' \
-            app/build.gradle app/build.gradle.kts \
-            build.gradle build.gradle.kts 2>/dev/null; then
-
-            if [ ! -s app/google-services.json ]; then
-              echo "::error::Firebase is configured, but app/google-services.json is missing."
-              exit 1
-            fi
-          fi
-
-      - name: Build Release APK and AAB
-        shell: bash
-        env:
-          BUILD_APK: ${{ github.event_name == 'push' || inputs.build_apk }}
-          BUILD_BUNDLE: ${{ github.event_name == 'push' || inputs.build_bundle }}
           GRADLE_OPTS: "-Dfile.encoding=UTF-8"
         run: |
-          set -euo pipefail
+          set -o pipefail
 
-          TASKS=()
-
-          if [ "$BUILD_APK" = "true" ]; then
-            TASKS+=(assembleRelease)
-          fi
-
-          if [ "$BUILD_BUNDLE" = "true" ]; then
-            TASKS+=(bundleRelease)
-          fi
-
-          if [ "${#TASKS[@]}" -eq 0 ]; then
-            echo "::error::Select at least one build artifact."
-            exit 1
-          fi
-
-          ./gradlew "${TASKS[@]}" \
+          ./gradlew clean assembleDebug \
             --no-daemon \
             --stacktrace \
-            --warning-mode all
+            --info \
+            --console=plain \
+            2>&1 | tee build.log
 
-      - name: Upload Release APK
-        if: ${{ github.event_name == 'push' || inputs.build_apk }}
+      - name: Upload Test APK
+        if: ${{ success() }}
         uses: actions/upload-artifact@v4
         with:
-          name: phone-diagnostics-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: android-test-apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 14
 
-      - name: Upload App Bundle
-        if: ${{ github.event_name == 'push' || inputs.build_bundle }}
+      - name: Upload Build Log
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: phone-diagnostics-app-bundle
-          path: app/build/outputs/bundle/release/*.aab
-          if-no-files-found: error
-          retention-days: 30
+          name: android-build-diagnostic-log
+          path: build.log
+          if-no-files-found: warn
+          retention-days: 14
 
-      - name: Publish GitHub Release
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
-          generate_release_notes: true
-          draft: false
-          prerelease: false
+      - name: Report Result
+        if: ${{ always() }}
+        shell: bash
+        env:
+          BUILD_STATUS: ${{ steps.build_apk.outcome }}
+        run: |
+          if [ "$BUILD_STATUS" = "success" ]; then
+            echo "Debug APK built successfully."
+          else
+            echo "::error::Android build failed. Download android-build-diagnostic-log to inspect the compiler error."
+          fi
           
