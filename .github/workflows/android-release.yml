@@ -5,7 +5,6 @@ on:
     branches:
       - main
       - master
-
   workflow_dispatch:
 
 permissions:
@@ -17,7 +16,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build and Diagnose Android APK
+    name: Build Android Debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -31,37 +30,46 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set Up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Verify Project
+      - name: Verify Android SDK
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ ! -f gradlew ]; then
-            echo "::error::gradlew was not found in the repository root."
+          echo "ANDROID_HOME=${ANDROID_HOME:-not set}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-not set}"
+
+          if [ -z "${ANDROID_HOME:-}" ] || \
+             [ ! -d "$ANDROID_HOME/platform-tools" ]; then
+            echo "::error::Android SDK or platform-tools not found."
             exit 1
           fi
 
+          adb version || true
+          java -version
+
+      - name: Verify Gradle Project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f gradlew || {
+            echo "::error::gradlew not found."
+            exit 1
+          }
+
           if [ ! -f settings.gradle ] && \
              [ ! -f settings.gradle.kts ]; then
-            echo "::error::Gradle settings file is missing."
+            echo "::error::Gradle settings file not found."
             exit 1
           fi
 
           if [ ! -f app/build.gradle ] && \
              [ ! -f app/build.gradle.kts ]; then
-            echo "::error::Android app Gradle file is missing."
+            echo "::error::App Gradle file not found."
             exit 1
           fi
 
           chmod +x gradlew
-
-          echo "Java version:"
-          java -version
-
-          echo "Gradle version:"
           ./gradlew --version
 
       - name: Build Debug APK
@@ -88,7 +96,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload Build Log
+      - name: Upload Diagnostic Log
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
@@ -97,7 +105,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Report Result
+      - name: Report Build Result
         if: ${{ always() }}
         shell: bash
         env:
@@ -106,6 +114,6 @@ jobs:
           if [ "$BUILD_STATUS" = "success" ]; then
             echo "Debug APK built successfully."
           else
-            echo "::error::Android build failed. Download android-build-diagnostic-log to inspect the compiler error."
+            echo "::error::Build failed. Download android-build-diagnostic-log."
           fi
           
