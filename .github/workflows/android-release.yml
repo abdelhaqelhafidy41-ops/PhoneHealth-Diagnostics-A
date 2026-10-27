@@ -36,7 +36,6 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
-          cache: 'gradle'
 
       - name: Grant Execute Permission to Gradlew
         run: chmod +x gradlew
@@ -96,11 +95,11 @@ jobs:
 
       - name: Build Release APK
         if: ${{ github.event_name == 'push' || inputs.build_apk }}
-        run: ./gradlew clean assembleRelease --no-daemon --stacktrace
+        run: ./gradlew clean assembleRelease --no-daemon --no-build-cache --stacktrace
 
       - name: Build Android App Bundle (.aab)
         if: ${{ github.event_name == 'push' || inputs.build_bundle }}
-        run: ./gradlew bundleRelease --no-daemon --stacktrace
+        run: ./gradlew bundleRelease --no-daemon --no-build-cache --stacktrace
 
       - name: Upload Release APK
         if: ${{ github.event_name == 'push' || inputs.build_apk }}
