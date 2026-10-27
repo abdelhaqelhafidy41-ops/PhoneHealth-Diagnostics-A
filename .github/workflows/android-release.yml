@@ -61,7 +61,8 @@ jobs:
           java -version
           ./gradlew --version
 
-      - name: Configure Release Signing
+      
+      - name: Configure Test Signing
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -70,29 +71,37 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -n "${KEYSTORE_BASE64:-}" ]; then
-            KEYSTORE_FILE="$RUNNER_TEMP/release-upload-key.jks"
+          KEYSTORE_FILE="$RUNNER_TEMP/test-release-key.jks"
+          STORE_PASS="${STORE_PASS_SECRET:-android}"
+          KEY_PASS="${KEY_PASS_SECRET:-android}"
 
+          if [ -n "${KEYSTORE_BASE64:-}" ]; then
             printf '%s' "$KEYSTORE_BASE64" \
               | base64 --decode > "$KEYSTORE_FILE"
-
-            keytool -list \
-              -keystore "$KEYSTORE_FILE" \
-              -storepass "${STORE_PASS_SECRET:?Missing STORE_PASSWORD secret}"
-
-            {
-              echo "KEYSTORE_PATH=$KEYSTORE_FILE"
-              echo "STORE_PASSWORD=$STORE_PASS_SECRET"
-              echo "KEY_PASSWORD=${KEY_PASS_SECRET:?Missing KEY_PASSWORD secret}"
-            } >> "$GITHUB_ENV"
-
-            echo "Custom release keystore configured."
           else
-            echo "::error::KEYSTORE_BASE64 secret is missing."
-            echo "Configure a persistent release keystore in GitHub Secrets."
-            exit 1
+            keytool -genkeypair \
+              -keystore "$KEYSTORE_FILE" \
+              -storepass "$STORE_PASS" \
+              -alias upload \
+              -keypass "$KEY_PASS" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Test Build,O=Android,C=US"
           fi
 
+          keytool -list \
+            -keystore "$KEYSTORE_FILE" \
+            -storepass "$STORE_PASS"
+
+          {
+            echo "KEYSTORE_PATH=$KEYSTORE_FILE"
+            echo "STORE_PASSWORD=$STORE_PASS"
+            echo "KEY_PASSWORD=$KEY_PASS"
+          } >> "$GITHUB_ENV"
+
+          echo "Temporary test signing configured."
+          
       - name: Configure Google Services
         shell: bash
         run: |
